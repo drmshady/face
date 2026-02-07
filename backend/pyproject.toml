@@ -1,0 +1,9 @@
+[project]
+name = "face-scan-alignment"
+version = "0.1.0"
+description = "Face-to-scan dental alignment backend"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

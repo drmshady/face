@@ -1,0 +1,53 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# Node.js
+node_modules/
+frontend/dist/
+
+# Environment
+.env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Runtime data
+backend/data/
+
+# Local settings
+.claude/settings.local.json
+.kilocode/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Testing
+coverage/
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Deployment
+deploy/certs/
+
+# Logs
+*.log
