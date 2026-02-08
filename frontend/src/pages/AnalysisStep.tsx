@@ -6,7 +6,7 @@ import { useSessionContext } from "../App";
 import { ConfidenceBadge } from "../components/ConfidenceBadge";
 import { LandmarkEditor } from "../components/LandmarkEditor";
 import { LandmarkOverlay } from "../components/LandmarkOverlay";
-import { getAnalysisStatus, getAnnotatedPhoto, exportAnalysisStl } from "../services/api";
+import { getAnalysisStatus, getAnnotatedPhoto, triggerAlignment } from "../services/api";
 import type { LandmarkPoint, ReferenceLine } from "../types";
 
 interface AnalysisResults {
@@ -37,11 +37,8 @@ export function AnalysisStep() {
   const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
   const [annotatedUrls, setAnnotatedUrls] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
-  const [exportOptions, setExportOptions] = useState({
-    include_landmarks: true,
-    include_fork: true,
-  });
-  const [exporting, setExporting] = useState(false);
+  const [alignmentStatus, setAlignmentStatus] = useState<"idle" | "aligning" | "done" | "error">("idle");
+  const [alignmentError, setAlignmentError] = useState<string | null>(null);
 
   const sessionId = session?.session_id ?? "";
 
@@ -101,6 +98,24 @@ export function AnalysisStep() {
     void loadAnnotated();
   }, [results, sessionId]);
 
+  // Auto-trigger alignment after analysis completes
+  useEffect(() => {
+    if (!results || !sessionId || alignmentStatus !== "idle") return;
+
+    const runAlignment = async () => {
+      setAlignmentStatus("aligning");
+      try {
+        await triggerAlignment(sessionId);
+        setAlignmentStatus("done");
+        navigate("/preview");
+      } catch (err) {
+        setAlignmentStatus("error");
+        setAlignmentError(err instanceof Error ? err.message : "Alignment failed");
+      }
+    };
+    void runAlignment();
+  }, [results, sessionId, alignmentStatus, navigate]);
+
   const handleLandmarkUpdate = useCallback(
     (
       updatedLandmarks: Record<string, LandmarkPoint>,
@@ -124,24 +139,6 @@ export function AnalysisStep() {
     },
     [results, editingPhotoId, refresh],
   );
-
-  const handleExportStl = useCallback(async () => {
-    if (!sessionId) return;
-    setExporting(true);
-    try {
-      const blob = await exportAnalysisStl(sessionId, exportOptions);
-      const link = document.createElement("a");
-      link.download = `analysis-${sessionId.slice(0, 8)}.stl`;
-      link.href = URL.createObjectURL(blob);
-      link.click();
-      URL.revokeObjectURL(link.href);
-    } catch (err) {
-      console.error("Export failed:", err);
-      alert("Export failed. Make sure AprilTags were detected in the photos.");
-    } finally {
-      setExporting(false);
-    }
-  }, [sessionId, exportOptions]);
 
   // Analyzing state
   if (status !== "analysis_complete" && !error) {
@@ -175,11 +172,11 @@ export function AnalysisStep() {
     );
   }
 
-  if (error) {
+  if (error || alignmentError) {
     return (
       <div style={{ padding: "24px", textAlign: "center" }}>
-        <h2>Analysis Error</h2>
-        <p style={{ color: "red" }}>{error}</p>
+        <h2>{alignmentError ? "Alignment Error" : "Analysis Error"}</h2>
+        <p style={{ color: "red" }}>{alignmentError ?? error}</p>
         <button
           onClick={() => navigate("/")}
           style={{
@@ -191,7 +188,7 @@ export function AnalysisStep() {
             cursor: "pointer",
           }}
         >
-          Back to Capture
+          Start Over
         </button>
       </div>
     );
@@ -315,86 +312,32 @@ export function AnalysisStep() {
         ))}
       </div>
 
-      {/* Export STL */}
-      <div
-        style={{
-          marginTop: "24px",
-          padding: "16px",
-          backgroundColor: "#f0f9ff",
-          borderRadius: "8px",
-          border: "1px solid #bae6fd",
-        }}
-      >
-        <h3 style={{ margin: "0 0 12px 0" }}>Export 3D Model</h3>
-        <p style={{ margin: "0 0 12px 0", fontSize: "14px", color: "#64748b" }}>
-          Export landmarks and fork to STL file (uses AprilTag detection for 3D positioning)
-        </p>
-        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "12px" }}>
-          <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={exportOptions.include_landmarks}
-              onChange={(e) => setExportOptions((o) => ({ ...o, include_landmarks: e.target.checked }))}
-            />
-            Include Landmarks (spheres)
-          </label>
-          <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
-            <input
-              type="checkbox"
-              checked={exportOptions.include_fork}
-              onChange={(e) => setExportOptions((o) => ({ ...o, include_fork: e.target.checked }))}
-            />
-            Include Fork Geometry
-          </label>
+      {/* Alignment progress */}
+      {alignmentStatus === "aligning" && (
+        <div style={{ marginTop: "24px", textAlign: "center", padding: "16px", backgroundColor: "#f0f9ff", borderRadius: "8px" }}>
+          <p style={{ color: "#2563eb", fontWeight: "bold" }}>Running 3D alignment...</p>
         </div>
-        <button
-          onClick={handleExportStl}
-          disabled={exporting}
-          style={{
-            padding: "10px 24px",
-            backgroundColor: "#2563eb",
-            color: "white",
-            border: "none",
-            borderRadius: "6px",
-            cursor: exporting ? "not-allowed" : "pointer",
-            opacity: exporting ? 0.7 : 1,
-          }}
-        >
-          {exporting ? "Exporting..." : "Download STL"}
-        </button>
-      </div>
+      )}
 
-      <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
-        <button
-          onClick={() => navigate("/align")}
-          style={{
-            padding: "14px 32px",
-            fontSize: "18px",
-            backgroundColor: "#2563eb",
-            color: "white",
-            border: "none",
-            borderRadius: "6px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          View 3D Alignment
-        </button>
-        <button
-          onClick={() => navigate("/scan")}
-          style={{
-            padding: "14px 32px",
-            fontSize: "18px",
-            backgroundColor: "#6b7280",
-            color: "white",
-            border: "none",
-            borderRadius: "6px",
-            cursor: "pointer",
-          }}
-        >
-          Upload Scan (Optional)
-        </button>
-      </div>
+      {alignmentStatus === "idle" && (
+        <div style={{ marginTop: "24px" }}>
+          <button
+            onClick={() => navigate("/preview")}
+            style={{
+              padding: "14px 32px",
+              fontSize: "18px",
+              backgroundColor: "#2563eb",
+              color: "white",
+              border: "none",
+              borderRadius: "6px",
+              cursor: "pointer",
+              fontWeight: "bold",
+            }}
+          >
+            Continue to Preview
+          </button>
+        </div>
+      )}
     </div>
   );
 }

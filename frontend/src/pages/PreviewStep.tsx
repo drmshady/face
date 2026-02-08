@@ -1,4 +1,4 @@
-/** Alignment review page — workflow step 4 (T062). */
+/** Preview page — 3D preview with fork + reference lines + export (simplified from AlignStep). */
 
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -7,15 +7,14 @@ import { AlignmentPreview } from "../components/AlignmentPreview";
 import * as api from "../services/api";
 import type { AlignmentResult } from "../types";
 
-export function AlignStep() {
+export function PreviewStep() {
   const { session, refresh } = useSessionContext();
   const navigate = useNavigate();
 
   const [alignment, setAlignment] = useState<AlignmentResult | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const [forkStlBlob, setForkStlBlob] = useState<Blob | null>(null);
-  const [scanStlBlob, setScanStlBlob] = useState<Blob | null>(null);
 
   // Fetch alignment data on mount
   useEffect(() => {
@@ -28,21 +27,15 @@ export function AlignStep() {
         const resp = await api.triggerAlignment(session.session_id);
         setAlignment(resp);
 
-        // Fetch fork and scan STL blobs in parallel
-        const [forkBlob, scanBlob] = await Promise.allSettled([
-          api.getForkStl(),
-          api.getScanStl(session.session_id),
-        ]);
-
-        if (forkBlob.status === "fulfilled") {
-          setForkStlBlob(forkBlob.value);
+        // Fetch fork STL
+        try {
+          const forkBlob = await api.getForkStl();
+          setForkStlBlob(forkBlob);
+        } catch {
+          // Fork STL may not be available
         }
-        if (scanBlob.status === "fulfilled") {
-          setScanStlBlob(scanBlob.value);
-        }
-      } catch {
-        // If alignment already computed, just use session status
-        setAlignment(null);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load alignment");
       } finally {
         setLoading(false);
       }
@@ -66,8 +59,8 @@ export function AlignStep() {
     return (
       <div style={{ padding: "24px" }}>
         <div style={{ color: "red", marginBottom: "16px" }}>{error}</div>
-        <button onClick={() => navigate("/analysis")} style={{ padding: "8px 16px" }}>
-          Back to Analysis
+        <button onClick={() => navigate("/")} style={{ padding: "8px 16px" }}>
+          Start Over
         </button>
       </div>
     );
@@ -78,7 +71,7 @@ export function AlignStep() {
       <div style={{ padding: "24px", textAlign: "center" }}>
         <p>No alignment data available.</p>
         <button
-          onClick={() => navigate("/analysis")}
+          onClick={() => navigate("/")}
           style={{
             marginTop: "12px",
             padding: "10px 24px",
@@ -89,7 +82,7 @@ export function AlignStep() {
             cursor: "pointer",
           }}
         >
-          Back to Analysis
+          Start Over
         </button>
       </div>
     );
@@ -97,14 +90,29 @@ export function AlignStep() {
 
   return (
     <div style={{ padding: "24px" }}>
-      <h2>Step 4: Review Alignment</h2>
+      <h2>Step 3: Preview</h2>
 
       <AlignmentPreview
         sessionId={session.session_id}
         alignment={alignment}
         forkStlBlob={forkStlBlob ?? undefined}
-        scanStlBlob={scanStlBlob ?? undefined}
       />
+
+      <div style={{ marginTop: "24px" }}>
+        <button
+          onClick={() => navigate("/")}
+          style={{
+            padding: "10px 24px",
+            backgroundColor: "#6b7280",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+          }}
+        >
+          Start Over
+        </button>
+      </div>
     </div>
   );
 }

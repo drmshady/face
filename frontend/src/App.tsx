@@ -3,11 +3,10 @@
 import { createContext, useContext, useState } from "react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { useSession } from "./hooks/useSession";
-import { AlignStep } from "./pages/AlignStep";
 import { AnalysisStep } from "./pages/AnalysisStep";
 import { CaptureStep } from "./pages/CaptureStep";
 import { ForkCalibrationStep } from "./pages/ForkCalibrationStep";
-import { ScanStep } from "./pages/ScanStep";
+import { PreviewStep } from "./pages/PreviewStep";
 import type { Session } from "./types";
 
 // Session context
@@ -37,11 +36,9 @@ export function useSessionContext() {
 
 // Step progress indicator
 const STEPS = [
-  { path: "/", label: "Capture" },
+  { path: "/", label: "Upload" },
   { path: "/analysis", label: "Analysis" },
-  { path: "/scan", label: "Scan" },
-  { path: "/align", label: "Align" },
-  { path: "/export", label: "Export" },
+  { path: "/preview", label: "Preview" },
 ];
 
 function StepIndicator() {
@@ -66,11 +63,6 @@ function StepIndicator() {
       ))}
     </nav>
   );
-}
-
-// Placeholder pages for later phases
-function Placeholder({ name }: { name: string }) {
-  return <div style={{ padding: "24px", textAlign: "center" }}>{name} — coming soon</div>;
 }
 
 export function App() {
@@ -98,9 +90,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<CaptureStep />} />
           <Route path="/analysis" element={<AnalysisStep />} />
-          <Route path="/scan" element={<ScanStep />} />
-          <Route path="/align" element={<AlignStep />} />
-          <Route path="/export" element={<Placeholder name="Export" />} />
+          <Route path="/preview" element={<PreviewStep />} />
           <Route path="/fork-calibration" element={<ForkCalibrationStep />} />
         </Routes>
       </div>

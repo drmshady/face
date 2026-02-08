@@ -13,8 +13,6 @@ interface AlignmentPreviewProps {
   forkStlBlob?: Blob;
   scanStlBlob?: Blob;
   landmarks3d?: Landmark3DInScan[];
-  onApprove: () => void;
-  onReject: () => void;
 }
 
 const PLANE_COLORS: Array<{
@@ -72,8 +70,6 @@ export function AlignmentPreview({
   forkStlBlob,
   scanStlBlob,
   landmarks3d,
-  onApprove,
-  onReject,
 }: AlignmentPreviewProps) {
   const refPlanes = alignment.reference_planes_in_scan;
   const planes = refPlanes
@@ -228,37 +224,6 @@ export function AlignmentPreview({
             );
           })}
         </div>}
-
-        {/* Actions */}
-        <div style={{ display: "flex", gap: "12px", marginTop: "8px" }}>
-          <button
-            onClick={onApprove}
-            style={{
-              padding: "10px 24px",
-              backgroundColor: "#22c55e",
-              color: "white",
-              border: "none",
-              borderRadius: "6px",
-              cursor: "pointer",
-              fontWeight: "bold",
-            }}
-          >
-            Approve Alignment
-          </button>
-          <button
-            onClick={onReject}
-            style={{
-              padding: "10px 24px",
-              backgroundColor: "#ef4444",
-              color: "white",
-              border: "none",
-              borderRadius: "6px",
-              cursor: "pointer",
-            }}
-          >
-            Re-analyze
-          </button>
-        </div>
 
         {/* Export */}
         <div style={{ borderTop: "1px solid #e5e7eb", paddingTop: "16px", marginTop: "16px" }}>
