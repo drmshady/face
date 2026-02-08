@@ -135,14 +135,77 @@ export interface Landmark3DInScan {
   confidence: number;
 }
 
+export interface Landmark3DInFork {
+  name: string;
+  point: Point3D;
+  confidence: number;
+  depth_method?: string;
+  depth_confidence?: number;
+  triangulation_residual_px?: number;
+}
+
+export interface CameraPose {
+  photo_id: string;
+  rvec: number[];
+  tvec: number[];
+  reprojection_error_px: number;
+  image_width: number;
+  image_height: number;
+  focal_length_mm?: number;
+}
+
+export interface ReferenceLine3D {
+  start_point: Point3D;
+  end_point: Point3D;
+  start_landmark: string;
+  end_landmark: string;
+  length_mm: number;
+  confidence: number;
+  depth_method: string;
+}
+
+export interface ReferencePlane3D {
+  point: Point3D;
+  normal: Point3D;
+  up_vector: Point3D;
+  confidence: number;
+  source_line: string;
+}
+
+export interface AprilTagInFork {
+  tag_id: number;
+  center: Point3D;
+  corners: Point3D[];
+  normal: Point3D;
+  size_mm: number;
+}
+
+export interface LandmarkToTagRelation {
+  landmark_name: string;
+  tag_id: number;
+  distance_mm: number;
+  direction: Point3D;
+  angle_from_tag_normal_deg: number;
+}
+
 export interface AlignmentResult {
-  t_face_to_scan: TransformMatrix;
+  t_face_to_scan?: TransformMatrix;
   t2_fork_to_scan?: TransformMatrix;
   reprojection_error_px: number;
-  registration_rmsd_mm: number;
+  registration_rmsd_mm?: number;
   quality: AlignmentQuality;
-  reference_planes_in_scan: ReferencePlanesInScan;
+  reference_planes_in_scan?: ReferencePlanesInScan;
   landmarks_3d_in_scan?: Landmark3DInScan[];
+  // New fields for 002-3d-landmark-registration
+  landmarks_3d_in_fork?: Landmark3DInFork[];
+  camera_poses?: CameraPose[];
+  interpupillary_line_3d?: ReferenceLine3D;
+  midline_plane_3d?: ReferencePlane3D;
+  apriltags_in_fork?: AprilTagInFork[];
+  landmark_to_tag_relations?: LandmarkToTagRelation[];
+  triangulation_method?: string;
+  scale_deviation_pct?: number;
+  bundle_adjustment_residual?: number;
 }
 
 // Export

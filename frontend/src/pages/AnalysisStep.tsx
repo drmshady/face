@@ -6,7 +6,7 @@ import { useSessionContext } from "../App";
 import { ConfidenceBadge } from "../components/ConfidenceBadge";
 import { LandmarkEditor } from "../components/LandmarkEditor";
 import { LandmarkOverlay } from "../components/LandmarkOverlay";
-import { getAnalysisStatus, getAnnotatedPhoto } from "../services/api";
+import { getAnalysisStatus, getAnnotatedPhoto, exportAnalysisStl } from "../services/api";
 import type { LandmarkPoint, ReferenceLine } from "../types";
 
 interface AnalysisResults {
@@ -37,6 +37,11 @@ export function AnalysisStep() {
   const [editingPhotoId, setEditingPhotoId] = useState<string | null>(null);
   const [annotatedUrls, setAnnotatedUrls] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  const [exportOptions, setExportOptions] = useState({
+    include_landmarks: true,
+    include_fork: true,
+  });
+  const [exporting, setExporting] = useState(false);
 
   const sessionId = session?.session_id ?? "";
 
@@ -119,6 +124,24 @@ export function AnalysisStep() {
     },
     [results, editingPhotoId, refresh],
   );
+
+  const handleExportStl = useCallback(async () => {
+    if (!sessionId) return;
+    setExporting(true);
+    try {
+      const blob = await exportAnalysisStl(sessionId, exportOptions);
+      const link = document.createElement("a");
+      link.download = `analysis-${sessionId.slice(0, 8)}.stl`;
+      link.href = URL.createObjectURL(blob);
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (err) {
+      console.error("Export failed:", err);
+      alert("Export failed. Make sure AprilTags were detected in the photos.");
+    } finally {
+      setExporting(false);
+    }
+  }, [sessionId, exportOptions]);
 
   // Analyzing state
   if (status !== "analysis_complete" && !error) {
@@ -292,21 +315,86 @@ export function AnalysisStep() {
         ))}
       </div>
 
-      <button
-        onClick={() => navigate("/scan")}
+      {/* Export STL */}
+      <div
         style={{
           marginTop: "24px",
-          padding: "14px 32px",
-          fontSize: "18px",
-          backgroundColor: "#2563eb",
-          color: "white",
-          border: "none",
-          borderRadius: "6px",
-          cursor: "pointer",
+          padding: "16px",
+          backgroundColor: "#f0f9ff",
+          borderRadius: "8px",
+          border: "1px solid #bae6fd",
         }}
       >
-        Continue to Scan Upload
-      </button>
+        <h3 style={{ margin: "0 0 12px 0" }}>Export 3D Model</h3>
+        <p style={{ margin: "0 0 12px 0", fontSize: "14px", color: "#64748b" }}>
+          Export landmarks and fork to STL file (uses AprilTag detection for 3D positioning)
+        </p>
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginBottom: "12px" }}>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={exportOptions.include_landmarks}
+              onChange={(e) => setExportOptions((o) => ({ ...o, include_landmarks: e.target.checked }))}
+            />
+            Include Landmarks (spheres)
+          </label>
+          <label style={{ display: "flex", alignItems: "center", gap: "8px", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={exportOptions.include_fork}
+              onChange={(e) => setExportOptions((o) => ({ ...o, include_fork: e.target.checked }))}
+            />
+            Include Fork Geometry
+          </label>
+        </div>
+        <button
+          onClick={handleExportStl}
+          disabled={exporting}
+          style={{
+            padding: "10px 24px",
+            backgroundColor: "#2563eb",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            cursor: exporting ? "not-allowed" : "pointer",
+            opacity: exporting ? 0.7 : 1,
+          }}
+        >
+          {exporting ? "Exporting..." : "Download STL"}
+        </button>
+      </div>
+
+      <div style={{ display: "flex", gap: "12px", marginTop: "24px" }}>
+        <button
+          onClick={() => navigate("/align")}
+          style={{
+            padding: "14px 32px",
+            fontSize: "18px",
+            backgroundColor: "#2563eb",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+            fontWeight: "bold",
+          }}
+        >
+          View 3D Alignment
+        </button>
+        <button
+          onClick={() => navigate("/scan")}
+          style={{
+            padding: "14px 32px",
+            fontSize: "18px",
+            backgroundColor: "#6b7280",
+            color: "white",
+            border: "none",
+            borderRadius: "6px",
+            cursor: "pointer",
+          }}
+        >
+          Upload Scan (Optional)
+        </button>
+      </div>
     </div>
   );
 }

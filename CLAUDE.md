@@ -1,8 +1,10 @@
-# FaceAnalyzer Development Guidelines
+﻿# FaceAnalyzer Development Guidelines
 
 Auto-generated from all feature plans. Last updated: 2026-02-08
 
 ## Active Technologies
+- Python 3.12 (backend), TypeScript 5.x (frontend) + FastAPI, OpenCV (cv2.triangulatePoints, cv2.solvePnP), SciPy (scipy.optimize.least_squares), NumPy, trimesh, Three.js (@react-three/fiber) (002-3d-landmark-registration)
+- Ephemeral in-memory session data + fork_geometry.json (persisted) (002-3d-landmark-registration)
 
 - **Backend**: Python 3.12, FastAPI, MediaPipe, OpenCV, pupil-apriltags, trimesh, Open3D, NumPy, SciPy, Pillow
 - **Frontend**: TypeScript 5.x, React 18, Vite, Three.js (@react-three/fiber), @mediapipe/tasks-vision, Axios
@@ -74,40 +76,17 @@ npm test
 5. **Simplicity**: Use established libraries (MediaPipe, OpenCV); YAGNI; minimal viable flow
 
 ## Recent Changes
+- 002-3d-landmark-registration: Added Python 3.12 (backend), TypeScript 5.x (frontend) + FastAPI, OpenCV (cv2.triangulatePoints, cv2.solvePnP), SciPy (scipy.optimize.least_squares), NumPy, trimesh, Three.js (@react-three/fiber)
 
 ### 001-face-scan-alignment (active)
 - Face photo analysis with dental landmark detection
 - Manual landmark placement for undetected points (tragus, porion)
-- Dual-marker alignment chain (2 external AprilTags + intra-oral hex posts)
-- STL scan processing and 3D marker detection
-- Fork calibration page (`/fork-calibration`): upload fork STL, auto-detect hex post markers, click-to-place AprilTag positions, save geometry to JSON
-- Fork geometry loaded by alignment service at runtime (falls back to defaults if unconfigured)
-- Alignment viewer: fork STL rendered aligned to scan (T2 transform), face landmarks projected to 3D, export aligned fork as STL
-- Image zoom/pan, auto-crop around face, export annotated image as PNG
-- Midline reference line (facial vertical axis)
-- Session auto-recovery on backend restart (transparent re-creation on 404/401)
-- CAD-agnostic export (STL + JSON + annotated photo)
 
 ### API Endpoints
 
 Session-scoped (require session cookie):
-- `POST /sessions` — Create session
-- `GET /sessions/{id}` — Get session state
-- `POST /sessions/{id}/photos` — Upload photo
-- `POST /sessions/{id}/analyze` — Trigger analysis
-- `GET /sessions/{id}/analyze/status` — Poll analysis progress
-- `PUT /sessions/{id}/photos/{photo_id}/landmarks` — Update landmarks
-- `GET /sessions/{id}/photos/{photo_id}/annotated` — Get annotated photo
-- `POST /sessions/{id}/scan` — Upload STL scan
-- `GET /sessions/{id}/scan/stl` — Download scan STL
-- `POST /sessions/{id}/align` — Compute alignment (returns T2, landmarks_3d_in_scan)
-- `POST /sessions/{id}/alignment/approve` — Approve alignment
 
 Session-independent (no cookie required):
-- `POST /fork/upload` — Upload fork STL, auto-detect hex posts
-- `GET /fork/stl` — Serve uploaded fork STL back to frontend
-- `POST /fork/configure` — Save fork geometry configuration
-- `GET /fork/geometry` — Get saved fork geometry
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

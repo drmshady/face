@@ -82,8 +82,8 @@ export function AlignStep() {
     return (
       <div style={{ padding: "24px" }}>
         <div style={{ color: "red", marginBottom: "16px" }}>{error}</div>
-        <button onClick={() => navigate("/scan")} style={{ padding: "8px 16px" }}>
-          Back to Scan
+        <button onClick={() => navigate("/analysis")} style={{ padding: "8px 16px" }}>
+          Back to Analysis
         </button>
       </div>
     );
@@ -94,7 +94,7 @@ export function AlignStep() {
       <div style={{ padding: "24px", textAlign: "center" }}>
         <p>No alignment data available.</p>
         <button
-          onClick={() => navigate("/scan")}
+          onClick={() => navigate("/analysis")}
           style={{
             marginTop: "12px",
             padding: "10px 24px",
@@ -105,7 +105,7 @@ export function AlignStep() {
             cursor: "pointer",
           }}
         >
-          Upload Scan
+          Back to Analysis
         </button>
       </div>
     );
@@ -116,6 +116,7 @@ export function AlignStep() {
       <h2>Step 4: Review Alignment</h2>
 
       <AlignmentPreview
+        sessionId={session.session_id}
         alignment={alignment}
         forkStlBlob={forkStlBlob ?? undefined}
         scanStlBlob={scanStlBlob ?? undefined}

@@ -429,6 +429,67 @@ async def get_analysis_status(session_id: str, request: Request) -> Response:
 
 
 # ---------------------------------------------------------------------------
+# Analysis Export (after image analysis, no scan required)
+# ---------------------------------------------------------------------------
+
+@router.post("/sessions/{session_id}/export/analysis-stl")
+async def export_analysis_stl(
+    session_id: str,
+    request: Request,
+    include_landmarks: bool = True,
+    include_fork: bool = True,
+    landmark_radius: float = 1.5,
+) -> Response:
+    """Export STL after image analysis (no scan required).
+
+    Projects 2D landmarks to 3D in fork coordinate space using AprilTag PnP.
+
+    Query parameters:
+        include_landmarks: Include landmark spheres (default: true)
+        include_fork: Include fork mesh (default: true)
+        landmark_radius: Radius of landmark spheres in mm (default: 1.5)
+    """
+    session, err = _get_session(session_id, request)
+    if err:
+        return err
+
+    if session.status not in (
+        SessionStatus.analysis_complete,
+        SessionStatus.scan_uploaded,
+        SessionStatus.aligning,
+        SessionStatus.alignment_complete,
+        SessionStatus.export_ready,
+    ):
+        return JSONResponse(
+            status_code=400,
+            content=make_error(ANALYSIS_IN_PROGRESS, "Analysis must be complete before export"),
+        )
+
+    from backend.src.services.stl_export import generate_analysis_export_stl
+
+    try:
+        stl_bytes = generate_analysis_export_stl(
+            session,
+            include_landmarks=include_landmarks,
+            include_fork=include_fork,
+            landmark_radius=landmark_radius,
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content=make_error(ALIGNMENT_NOT_READY, str(e)),
+        )
+
+    return Response(
+        content=stl_bytes,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="analysis-{session_id[:8]}.stl"',
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
 # Landmark Update (T034)
 # ---------------------------------------------------------------------------
 
@@ -678,21 +739,17 @@ async def trigger_alignment(session_id: str, request: Request) -> Response:
     if err:
         return err
 
-    # Validate prerequisites
-    if session.scan is None:
-        return JSONResponse(
-            status_code=400,
-            content=make_error(ALIGNMENT_NOT_READY, "No scan uploaded"),
-        )
-
+    # Validate prerequisites — scan is optional (fork-space alignment works without it)
+    logger.info("Align request: session_id=%s, status=%s", session_id, session.status)
     if session.status not in (
         SessionStatus.scan_uploaded,
         SessionStatus.analysis_complete,
         SessionStatus.alignment_complete,
     ):
+        logger.warning("Alignment rejected: status=%s not in allowed set", session.status)
         return JSONResponse(
             status_code=400,
-            content=make_error(ALIGNMENT_NOT_READY, "Analysis must be complete and scan uploaded before alignment"),
+            content=make_error(ALIGNMENT_NOT_READY, f"Analysis must be complete before alignment (current status: {session.status.value})"),
         )
 
     # Compute alignment
@@ -705,8 +762,8 @@ async def trigger_alignment(session_id: str, request: Request) -> Response:
     try:
         alignment_result = compute_full_alignment(session)
     except Exception as e:
-        logger.error(f"Alignment failed: {e}")
-        session.status = SessionStatus.scan_uploaded
+        logger.error(f"Alignment failed: {e}", exc_info=True)
+        session.status = SessionStatus.analysis_complete
         store.update_session(token, session)
         return JSONResponse(
             status_code=400,
@@ -725,16 +782,8 @@ async def trigger_alignment(session_id: str, request: Request) -> Response:
             "session_id": session.session_id,
             "status": "alignment_complete",
             "alignment": {
-                "t_face_to_scan": {
-                    "matrix": a.t_face_to_scan.matrix,
-                    "rotation_euler_deg": a.t_face_to_scan.rotation_euler_deg,
-                    "translation_mm": a.t_face_to_scan.translation_mm,
-                },
-                "t2_fork_to_scan": {
-                    "matrix": a.t2_fork_to_scan.matrix,
-                    "rotation_euler_deg": a.t2_fork_to_scan.rotation_euler_deg,
-                    "translation_mm": a.t2_fork_to_scan.translation_mm,
-                },
+                "t_face_to_scan": _serialize_transform(a.t_face_to_scan),
+                "t2_fork_to_scan": _serialize_transform(a.t2_fork_to_scan),
                 "reprojection_error_px": a.reprojection_error_px,
                 "registration_rmsd_mm": a.registration_rmsd_mm,
                 "quality": a.quality.value,
@@ -743,7 +792,7 @@ async def trigger_alignment(session_id: str, request: Request) -> Response:
                     "frankfort_plane": _serialize_plane(a.reference_planes_in_scan.frankfort_plane),
                     "ala_tragus_plane": _serialize_plane(a.reference_planes_in_scan.ala_tragus_plane),
                     "canthus_tragus_plane": _serialize_plane(a.reference_planes_in_scan.canthus_tragus_plane),
-                },
+                } if a.reference_planes_in_scan else None,
                 "landmarks_3d_in_scan": [
                     {
                         "name": lm.name,
@@ -752,9 +801,71 @@ async def trigger_alignment(session_id: str, request: Request) -> Response:
                     }
                     for lm in a.landmarks_3d_in_scan
                 ],
+                # New fields for 002-3d-landmark-registration
+                "landmarks_3d_in_fork": [
+                    {
+                        "name": lm.name,
+                        "point": {"x": lm.point.x, "y": lm.point.y, "z": lm.point.z},
+                        "confidence": lm.confidence,
+                        "depth_method": lm.depth_method,
+                        "depth_confidence": lm.depth_confidence,
+                        "triangulation_residual_px": lm.triangulation_residual_px,
+                    }
+                    for lm in a.landmarks_3d_in_fork
+                ],
+                "camera_poses": [
+                    {
+                        "photo_id": cp.photo_id,
+                        "rvec": cp.rvec,
+                        "tvec": cp.tvec,
+                        "reprojection_error_px": cp.reprojection_error_px,
+                        "image_width": cp.image_width,
+                        "image_height": cp.image_height,
+                        "focal_length_mm": cp.focal_length_mm,
+                    }
+                    for cp in a.camera_poses
+                ],
+                "interpupillary_line_3d": _serialize_reference_line(a.interpupillary_line_3d),
+                "midline_plane_3d": _serialize_reference_plane(a.midline_plane_3d),
+                "apriltags_in_fork": [
+                    {
+                        "tag_id": tag.tag_id,
+                        "center": {"x": tag.center.x, "y": tag.center.y, "z": tag.center.z},
+                        "corners": [
+                            {"x": c.x, "y": c.y, "z": c.z} for c in tag.corners
+                        ],
+                        "normal": {"x": tag.normal.x, "y": tag.normal.y, "z": tag.normal.z},
+                        "size_mm": tag.size_mm,
+                    }
+                    for tag in a.apriltags_in_fork
+                ],
+                "landmark_to_tag_relations": [
+                    {
+                        "landmark_name": rel.landmark_name,
+                        "tag_id": rel.tag_id,
+                        "distance_mm": rel.distance_mm,
+                        "direction": {"x": rel.direction.x, "y": rel.direction.y, "z": rel.direction.z},
+                        "angle_from_tag_normal_deg": rel.angle_from_tag_normal_deg,
+                    }
+                    for rel in a.landmark_to_tag_relations
+                ],
+                "triangulation_method": a.triangulation_method,
+                "scale_deviation_pct": a.scale_deviation_pct,
+                "bundle_adjustment_residual": a.bundle_adjustment_residual,
             },
         },
     )
+
+
+def _serialize_transform(transform):
+    """Serialize a TransformMatrix to dict or None."""
+    if transform is None:
+        return None
+    return {
+        "matrix": transform.matrix,
+        "rotation_euler_deg": transform.rotation_euler_deg,
+        "translation_mm": transform.translation_mm,
+    }
 
 
 def _serialize_plane(plane):
@@ -764,6 +875,39 @@ def _serialize_plane(plane):
     return {
         "point": {"x": plane.point.x, "y": plane.point.y, "z": plane.point.z},
         "normal": {"x": plane.normal.x, "y": plane.normal.y, "z": plane.normal.z},
+    }
+
+
+def _serialize_point3d(pt):
+    """Serialize a Point3D to dict."""
+    return {"x": pt.x, "y": pt.y, "z": pt.z}
+
+
+def _serialize_reference_line(line):
+    """Serialize a ReferenceLine3D to dict or None."""
+    if line is None:
+        return None
+    return {
+        "start_point": _serialize_point3d(line.start_point),
+        "end_point": _serialize_point3d(line.end_point),
+        "start_landmark": line.start_landmark,
+        "end_landmark": line.end_landmark,
+        "length_mm": line.length_mm,
+        "confidence": line.confidence,
+        "depth_method": line.depth_method,
+    }
+
+
+def _serialize_reference_plane(plane):
+    """Serialize a ReferencePlane3D to dict or None."""
+    if plane is None:
+        return None
+    return {
+        "point": _serialize_point3d(plane.point),
+        "normal": _serialize_point3d(plane.normal),
+        "up_vector": _serialize_point3d(plane.up_vector),
+        "confidence": plane.confidence,
+        "source_line": plane.source_line,
     }
 
 
@@ -793,6 +937,108 @@ async def approve_alignment(session_id: str, request: Request) -> Response:
         content={
             "session_id": session.session_id,
             "status": "export_ready",
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# Combined STL Export (T058)
+# ---------------------------------------------------------------------------
+
+@router.post("/sessions/{session_id}/export/combined-stl")
+async def export_combined_stl(
+    session_id: str,
+    request: Request,
+    include_landmarks: bool = True,
+    include_fork: bool = True,
+    include_scan: bool = False,
+    include_apriltag_markers: bool = True,
+    landmark_radius: float = 1.5,
+) -> Response:
+    """Export combined STL with landmarks, fork, reference geometry, and optionally scan.
+
+    Query parameters:
+        include_landmarks: Include landmark spheres (default: true)
+        include_fork: Include transformed fork mesh (default: true)
+        include_scan: Include intra-oral scan mesh (default: false)
+        include_apriltag_markers: Include AprilTag rectangles (default: true)
+        landmark_radius: Radius of landmark spheres in mm (default: 1.5)
+    """
+    session, err = _get_session(session_id, request)
+    if err:
+        return err
+
+    if session.alignment is None:
+        return JSONResponse(
+            status_code=400,
+            content=make_error(ALIGNMENT_NOT_READY, "Alignment must be complete before export"),
+        )
+
+    from backend.src.services.stl_export import generate_combined_stl
+
+    try:
+        stl_bytes = generate_combined_stl(
+            session,
+            include_landmarks=include_landmarks,
+            include_fork=include_fork,
+            include_scan=include_scan,
+            include_apriltag_markers=include_apriltag_markers,
+            landmark_radius=landmark_radius,
+        )
+    except ValueError as e:
+        return JSONResponse(
+            status_code=400,
+            content=make_error(ALIGNMENT_NOT_READY, str(e)),
+        )
+
+    return Response(
+        content=stl_bytes,
+        media_type="application/octet-stream",
+        headers={
+            "Content-Disposition": f'attachment; filename="combined-{session_id[:8]}.stl"',
+        },
+    )
+
+
+# ---------------------------------------------------------------------------
+# JSON Export (T023)
+# ---------------------------------------------------------------------------
+
+
+@router.post("/sessions/{session_id}/export/alignment-json")
+async def export_alignment_json(session_id: str, request: Request) -> Response:
+    """Export structured JSON with all 3D positions in fork coordinate space."""
+    session, err = _get_session(session_id, request)
+    if err:
+        return err
+
+    if session.alignment is None:
+        return JSONResponse(
+            status_code=400,
+            content=make_error(ALIGNMENT_NOT_READY, "Alignment must be complete before export"),
+        )
+
+    a = session.alignment
+    from datetime import datetime, timezone
+
+    export_data = {
+        "session_id": session_id,
+        "export_timestamp": datetime.now(timezone.utc).isoformat(),
+        "coordinate_space": "fork",
+        "quality": a.quality.value if hasattr(a.quality, "value") else str(a.quality),
+        "reprojection_error_px": a.reprojection_error_px,
+        "interpupillary_line": _serialize_reference_line(a.interpupillary_line_3d),
+        "midline_plane": _serialize_reference_plane(a.midline_plane_3d),
+    }
+
+    import json
+    json_bytes = json.dumps(export_data, indent=2).encode("utf-8")
+
+    return Response(
+        content=json_bytes,
+        media_type="application/json",
+        headers={
+            "Content-Disposition": f'attachment; filename="alignment-{session_id[:8]}.json"',
         },
     )
 

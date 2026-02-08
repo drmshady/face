@@ -1,4 +1,4 @@
-/** STL 3D viewer using @react-three/fiber (T059). */
+/** STL 3D viewer using @react-three/fiber (T059, T015-T019). */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas } from "@react-three/fiber";
@@ -6,7 +6,16 @@ import { Html, OrbitControls } from "@react-three/drei";
 import * as THREE from "three";
 import { STLLoader } from "three/examples/jsm/loaders/STLLoader.js";
 import { STLExporter } from "three/examples/jsm/exporters/STLExporter.js";
-import type { IntraOralMarker, Landmark3DInScan, Plane3D, TransformMatrix } from "../types";
+import type {
+  AprilTagInFork,
+  IntraOralMarker,
+  Landmark3DInFork,
+  Landmark3DInScan,
+  Plane3D,
+  ReferenceLine3D,
+  ReferencePlane3D,
+  TransformMatrix,
+} from "../types";
 
 interface StlViewerProps {
   stlUrl?: string;
@@ -16,6 +25,10 @@ interface StlViewerProps {
   forkStlBlob?: Blob;
   forkTransformMatrix?: TransformMatrix;
   landmarks3d?: Landmark3DInScan[];
+  landmarks3dFork?: Landmark3DInFork[];
+  apriltags?: AprilTagInFork[];
+  interpupillaryLine?: ReferenceLine3D;
+  midlinePlane?: ReferencePlane3D;
   onExportFork?: (blob: Blob) => void;
 }
 
@@ -123,6 +136,36 @@ function LandmarkSphere3D({ landmark }: { landmark: Landmark3DInScan }) {
   );
 }
 
+/** T015: Fork landmark sphere with depth confidence opacity */
+function LandmarkSphere3DFork({ landmark }: { landmark: Landmark3DInFork }) {
+  const color = LANDMARK_COLORS[landmark.name] ?? "#ffffff";
+  const opacity = (landmark.depth_confidence ?? 0.5) > 0.8 ? 1.0
+    : (landmark.depth_confidence ?? 0.5) > 0.5 ? 0.7 : 0.4;
+  return (
+    <group position={[landmark.point.x, landmark.point.y, landmark.point.z]}>
+      <mesh>
+        <sphereGeometry args={[1.2, 12, 12]} />
+        <meshStandardMaterial color={color} transparent opacity={opacity} />
+      </mesh>
+      <Html distanceFactor={80} style={{ pointerEvents: "none" }}>
+        <div
+          style={{
+            color: "white",
+            fontSize: "10px",
+            background: "rgba(0,0,0,0.6)",
+            padding: "1px 4px",
+            borderRadius: "3px",
+            whiteSpace: "nowrap",
+            transform: "translateX(-50%)",
+          }}
+        >
+          {landmark.name.replace(/_/g, " ")}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
 function MarkerSphere({ marker }: { marker: IntraOralMarker }) {
   return (
     <mesh position={[marker.position.x, marker.position.y, marker.position.z]}>
@@ -155,6 +198,172 @@ function PlaneOverlay({ plane, color }: { plane: Plane3D; color: string }) {
   );
 }
 
+/** T015: AprilTag rectangle marker in 3D */
+function AprilTagMarker3D({ tag }: { tag: AprilTagInFork }) {
+  const quaternion = useMemo(() => {
+    const normal = new THREE.Vector3(tag.normal.x, tag.normal.y, tag.normal.z).normalize();
+    const q = new THREE.Quaternion();
+    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    return q;
+  }, [tag]);
+
+  return (
+    <group position={[tag.center.x, tag.center.y, tag.center.z]} quaternion={quaternion}>
+      <mesh>
+        <planeGeometry args={[tag.size_mm, tag.size_mm]} />
+        <meshStandardMaterial
+          color="#f97316"
+          transparent
+          opacity={0.4}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <Html distanceFactor={100} style={{ pointerEvents: "none" }}>
+        <div
+          style={{
+            color: "#f97316",
+            fontSize: "9px",
+            fontWeight: "bold",
+            background: "rgba(0,0,0,0.5)",
+            padding: "1px 4px",
+            borderRadius: "3px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          Tag {tag.tag_id}
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+/** T016: Interpupillary reference line as tube */
+function ReferenceLineTube({ line }: { line: ReferenceLine3D }) {
+  const geometry = useMemo(() => {
+    const start = new THREE.Vector3(line.start_point.x, line.start_point.y, line.start_point.z);
+    const end = new THREE.Vector3(line.end_point.x, line.end_point.y, line.end_point.z);
+    const path = new THREE.LineCurve3(start, end);
+    return new THREE.TubeGeometry(path, 8, 0.8, 8, false);
+  }, [line]);
+
+  const midpoint = useMemo(() => {
+    return new THREE.Vector3(
+      (line.start_point.x + line.end_point.x) / 2,
+      (line.start_point.y + line.end_point.y) / 2,
+      (line.start_point.z + line.end_point.z) / 2,
+    );
+  }, [line]);
+
+  return (
+    <group>
+      <mesh geometry={geometry}>
+        <meshStandardMaterial color="#3b82f6" />
+      </mesh>
+      <Html position={[midpoint.x, midpoint.y + 3, midpoint.z]} distanceFactor={100} style={{ pointerEvents: "none" }}>
+        <div
+          style={{
+            color: "#3b82f6",
+            fontSize: "10px",
+            fontWeight: "bold",
+            background: "rgba(0,0,0,0.6)",
+            padding: "2px 6px",
+            borderRadius: "3px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          IPD: {line.length_mm.toFixed(1)} mm
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+/** T017: Midline plane overlay */
+function ReferencePlane3DOverlay({ plane }: { plane: ReferencePlane3D }) {
+  const quaternion = useMemo(() => {
+    const normal = new THREE.Vector3(plane.normal.x, plane.normal.y, plane.normal.z).normalize();
+    const q = new THREE.Quaternion();
+    q.setFromUnitVectors(new THREE.Vector3(0, 0, 1), normal);
+    return q;
+  }, [plane]);
+
+  return (
+    <group position={[plane.point.x, plane.point.y, plane.point.z]} quaternion={quaternion}>
+      <mesh>
+        <planeGeometry args={[80, 80]} />
+        <meshStandardMaterial
+          color="#22c55e"
+          transparent
+          opacity={0.25}
+          side={THREE.DoubleSide}
+        />
+      </mesh>
+      <Html distanceFactor={120} style={{ pointerEvents: "none" }}>
+        <div
+          style={{
+            color: "#22c55e",
+            fontSize: "9px",
+            fontWeight: "bold",
+            background: "rgba(0,0,0,0.5)",
+            padding: "1px 4px",
+            borderRadius: "3px",
+          }}
+        >
+          Midline
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+/** T018: Dimension line between AprilTag centers */
+function DimensionLine({ tags }: { tags: AprilTagInFork[] }) {
+  if (tags.length < 2) return null;
+
+  const start = tags[0].center;
+  const end = tags[1].center;
+  const distance = Math.sqrt(
+    (end.x - start.x) ** 2 + (end.y - start.y) ** 2 + (end.z - start.z) ** 2,
+  );
+
+  const geometry = useMemo(() => {
+    const s = new THREE.Vector3(start.x, start.y, start.z);
+    const e = new THREE.Vector3(end.x, end.y, end.z);
+    const path = new THREE.LineCurve3(s, e);
+    return new THREE.TubeGeometry(path, 8, 0.4, 6, false);
+  }, [start, end]);
+
+  const mid = useMemo(() => new THREE.Vector3(
+    (start.x + end.x) / 2,
+    (start.y + end.y) / 2 - 3,
+    (start.z + end.z) / 2,
+  ), [start, end]);
+
+  return (
+    <group>
+      <mesh geometry={geometry}>
+        <meshStandardMaterial color="#a855f7" />
+      </mesh>
+      <Html position={[mid.x, mid.y, mid.z]} distanceFactor={100} style={{ pointerEvents: "none" }}>
+        <div
+          style={{
+            color: "#a855f7",
+            fontSize: "9px",
+            fontWeight: "bold",
+            background: "rgba(0,0,0,0.5)",
+            padding: "1px 4px",
+            borderRadius: "3px",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {distance.toFixed(1)} mm
+        </div>
+      </Html>
+    </group>
+  );
+}
+
+/** T019: Main StlViewer with all new elements */
 export function StlViewer({
   stlUrl,
   stlBlob,
@@ -163,6 +372,10 @@ export function StlViewer({
   forkStlBlob,
   forkTransformMatrix,
   landmarks3d = [],
+  landmarks3dFork = [],
+  apriltags = [],
+  interpupillaryLine,
+  midlinePlane,
   onExportFork,
 }: StlViewerProps) {
   const [geometry, setGeometry] = useState<THREE.BufferGeometry | null>(null);
@@ -214,19 +427,26 @@ export function StlViewer({
     return <div style={{ padding: "24px", color: "red", textAlign: "center" }}>{error}</div>;
   }
 
+  const hasAnyContent = forkStlBlob || landmarks3d.length > 0 || landmarks3dFork.length > 0 || apriltags.length > 0;
+
   return (
     <div>
       {/* Controls */}
-      {(forkStlBlob || landmarks3d.length > 0) && (
-        <div style={{ display: "flex", gap: "8px", marginBottom: "8px", alignItems: "center" }}>
+      {hasAnyContent && (
+        <div style={{ display: "flex", gap: "8px", marginBottom: "8px", alignItems: "center", flexWrap: "wrap" }}>
           {forkStlBlob && (
             <span style={{ fontSize: "12px", color: "#6d9eeb" }}>
               Fork mesh shown (semi-transparent blue)
             </span>
           )}
-          {landmarks3d.length > 0 && (
+          {landmarks3dFork.length > 0 && (
             <span style={{ fontSize: "12px", color: "#9ca3af" }}>
-              {landmarks3d.length} landmarks in 3D
+              {landmarks3dFork.length} landmarks in fork space
+            </span>
+          )}
+          {apriltags.length > 0 && (
+            <span style={{ fontSize: "12px", color: "#f97316" }}>
+              {apriltags.length} AprilTags
             </span>
           )}
           {forkStlBlob && onExportFork && (
@@ -269,13 +489,33 @@ export function StlViewer({
             <MarkerSphere key={m.marker_id} marker={m} />
           ))}
 
+          {/* Legacy scan-space landmarks */}
           {landmarks3d.map((lm) => (
             <LandmarkSphere3D key={lm.name} landmark={lm} />
+          ))}
+
+          {/* Fork-space landmarks with confidence opacity */}
+          {landmarks3dFork.map((lm) => (
+            <LandmarkSphere3DFork key={`fork-${lm.name}`} landmark={lm} />
           ))}
 
           {planes.map((p, i) => (
             p.plane && <PlaneOverlay key={i} plane={p.plane} color={p.color} />
           ))}
+
+          {/* AprilTag markers */}
+          {apriltags.map((tag) => (
+            <AprilTagMarker3D key={`tag-${tag.tag_id}`} tag={tag} />
+          ))}
+
+          {/* Interpupillary line */}
+          {interpupillaryLine && <ReferenceLineTube line={interpupillaryLine} />}
+
+          {/* Midline plane */}
+          {midlinePlane && <ReferencePlane3DOverlay plane={midlinePlane} />}
+
+          {/* Dimension line between AprilTags */}
+          {apriltags.length >= 2 && <DimensionLine tags={apriltags} />}
 
           <OrbitControls enableDamping dampingFactor={0.1} />
         </Canvas>

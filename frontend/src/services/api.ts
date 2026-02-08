@@ -152,6 +152,78 @@ export async function downloadExport(sessionId: string): Promise<Blob> {
   return data as Blob;
 }
 
+export interface CombinedStlExportOptions {
+  include_landmarks?: boolean;
+  include_fork?: boolean;
+  include_scan?: boolean;
+  landmark_radius?: number;
+}
+
+export async function exportCombinedStl(
+  sessionId: string,
+  options: CombinedStlExportOptions = {},
+): Promise<Blob> {
+  const params = new URLSearchParams();
+  if (options.include_landmarks !== undefined) {
+    params.set("include_landmarks", String(options.include_landmarks));
+  }
+  if (options.include_fork !== undefined) {
+    params.set("include_fork", String(options.include_fork));
+  }
+  if (options.include_scan !== undefined) {
+    params.set("include_scan", String(options.include_scan));
+  }
+  if (options.landmark_radius !== undefined) {
+    params.set("landmark_radius", String(options.landmark_radius));
+  }
+
+  const { data } = await client.post(
+    `/sessions/${sessionId}/export/combined-stl?${params.toString()}`,
+    null,
+    { responseType: "blob" },
+  );
+  return data as Blob;
+}
+
+// T024: JSON export
+export async function exportAlignmentJson(sessionId: string): Promise<Blob> {
+  const { data } = await client.post(
+    `/sessions/${sessionId}/export/alignment-json`,
+    null,
+    { responseType: "blob" },
+  );
+  return data as Blob;
+}
+
+export interface AnalysisStlExportOptions {
+  include_landmarks?: boolean;
+  include_fork?: boolean;
+  landmark_radius?: number;
+}
+
+export async function exportAnalysisStl(
+  sessionId: string,
+  options: AnalysisStlExportOptions = {},
+): Promise<Blob> {
+  const params = new URLSearchParams();
+  if (options.include_landmarks !== undefined) {
+    params.set("include_landmarks", String(options.include_landmarks));
+  }
+  if (options.include_fork !== undefined) {
+    params.set("include_fork", String(options.include_fork));
+  }
+  if (options.landmark_radius !== undefined) {
+    params.set("landmark_radius", String(options.landmark_radius));
+  }
+
+  const { data } = await client.post(
+    `/sessions/${sessionId}/export/analysis-stl?${params.toString()}`,
+    null,
+    { responseType: "blob" },
+  );
+  return data as Blob;
+}
+
 // Fork calibration (session-independent)
 
 export async function uploadFork(
